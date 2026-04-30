@@ -165,6 +165,11 @@ function renderAuth(mode = "login") {
               <input id="password" name="password" type="password" autocomplete="${mode === "signup" ? "new-password" : "current-password"}" required minlength="6" />
             </div>
             <button class="btn full" type="submit">${mode === "signup" ? "Create account" : "Login"}</button>
+            ${mode === "login" ? `
+              <p class="login-help">
+                Default Admin: <strong>admin@taskmanager.com</strong> / <strong>admin123</strong>
+              </p>
+            ` : ""}
           </form>
         </div>
       </div>

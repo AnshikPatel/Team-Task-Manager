@@ -232,6 +232,19 @@ button {
   font-size: 14px;
 }
 
+.login-help {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f7fafc;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.login-help strong {
+  color: var(--brand-dark);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

@@ -14,6 +14,7 @@ const TASK_STATUSES = ["todo", "in-progress", "done"];
 const SESSION_HOURS = 24;
 const DEFAULT_ADMIN_EMAIL = "admin@taskmanager.com";
 const DEFAULT_ADMIN_PASSWORD = "admin123";
+const TOKEN_SECRET = process.env.SESSION_SECRET || "team-task-manager-demo-secret";
 
 function ensureDb() {
   const dbDir = path.dirname(DB_PATH);
@@ -91,6 +92,41 @@ function id(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
+function base64url(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function sign(value) {
+  return crypto.createHmac("sha256", TOKEN_SECRET).update(value).digest("base64url");
+}
+
+function createToken(userId) {
+  const payload = JSON.stringify({
+    userId,
+    expiresAt: Date.now() + SESSION_HOURS * 60 * 60 * 1000
+  });
+  const encodedPayload = base64url(payload);
+  return `${encodedPayload}.${sign(encodedPayload)}`;
+}
+
+function readToken(token) {
+  const [encodedPayload, signature] = String(token || "").split(".");
+  if (!encodedPayload || !signature) return null;
+  const expectedSignature = sign(encodedPayload);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (signatureBuffer.length !== expectedBuffer.length) return null;
+  if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) return null;
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    if (!payload.userId || payload.expiresAt < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
   return `${salt}:${hash}`;
@@ -120,10 +156,9 @@ function getAuth(req, db) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return null;
-  cleanupSessions(db);
-  const session = db.sessions.find(item => item.token === token);
-  if (!session) return null;
-  const user = db.users.find(item => item.id === session.userId);
+  const tokenPayload = readToken(token);
+  if (!tokenPayload) return null;
+  const user = db.users.find(item => item.id === tokenPayload.userId);
   return user ? { user, token } : null;
 }
 
@@ -220,12 +255,7 @@ async function handleApi(req, res, pathname) {
       createdAt: new Date().toISOString()
     };
     db.users.push(user);
-    const token = id("tok");
-    db.sessions.push({
-      token,
-      userId: user.id,
-      expiresAt: Date.now() + SESSION_HOURS * 60 * 60 * 1000
-    });
+    const token = createToken(user.id);
     writeDb(db);
     return send(res, 201, { token, user: publicUser(user) });
   }
@@ -237,13 +267,7 @@ async function handleApi(req, res, pathname) {
     if (!user || !verifyPassword(password, user.passwordHash)) {
       return sendError(res, 401, "Invalid email or password.");
     }
-    const token = id("tok");
-    cleanupSessions(db);
-    db.sessions.push({
-      token,
-      userId: user.id,
-      expiresAt: Date.now() + SESSION_HOURS * 60 * 60 * 1000
-    });
+    const token = createToken(user.id);
     writeDb(db);
     return send(res, 200, { token, user: publicUser(user) });
   }
@@ -252,9 +276,6 @@ async function handleApi(req, res, pathname) {
   if (!currentUser) return;
 
   if (req.method === "POST" && pathname === "/api/auth/logout") {
-    const auth = getAuth(req, db);
-    db.sessions = db.sessions.filter(session => session.token !== auth.token);
-    writeDb(db);
     return send(res, 200, { ok: true });
   }
 
