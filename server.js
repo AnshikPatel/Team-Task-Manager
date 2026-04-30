@@ -100,9 +100,9 @@ function sign(value) {
   return crypto.createHmac("sha256", TOKEN_SECRET).update(value).digest("base64url");
 }
 
-function createToken(userId) {
+function createToken(user) {
   const payload = JSON.stringify({
-    userId,
+    user: publicUser(user),
     expiresAt: Date.now() + SESSION_HOURS * 60 * 60 * 1000
   });
   const encodedPayload = base64url(payload);
@@ -120,7 +120,7 @@ function readToken(token) {
 
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
-    if (!payload.userId || payload.expiresAt < Date.now()) return null;
+    if (!payload.user?.id || payload.expiresAt < Date.now()) return null;
     return payload;
   } catch {
     return null;
@@ -158,7 +158,7 @@ function getAuth(req, db) {
   if (!token) return null;
   const tokenPayload = readToken(token);
   if (!tokenPayload) return null;
-  const user = db.users.find(item => item.id === tokenPayload.userId);
+  const user = db.users.find(item => item.id === tokenPayload.user.id) || tokenPayload.user;
   return user ? { user, token } : null;
 }
 
@@ -255,7 +255,7 @@ async function handleApi(req, res, pathname) {
       createdAt: new Date().toISOString()
     };
     db.users.push(user);
-    const token = createToken(user.id);
+    const token = createToken(user);
     writeDb(db);
     return send(res, 201, { token, user: publicUser(user) });
   }
@@ -267,7 +267,7 @@ async function handleApi(req, res, pathname) {
     if (!user || !verifyPassword(password, user.passwordHash)) {
       return sendError(res, 401, "Invalid email or password.");
     }
-    const token = createToken(user.id);
+    const token = createToken(user);
     writeDb(db);
     return send(res, 200, { token, user: publicUser(user) });
   }
@@ -284,7 +284,11 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/users") {
-    return send(res, 200, { users: db.users.map(publicUser) });
+    const users = db.users.map(publicUser);
+    if (!users.some(user => user.id === currentUser.id)) {
+      users.push(publicUser(currentUser));
+    }
+    return send(res, 200, { users });
   }
 
   if (req.method === "GET" && pathname === "/api/dashboard") {

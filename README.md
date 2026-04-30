@@ -70,6 +70,8 @@ This project includes a Vercel serverless API entry point in `api/[...path].js`,
 
 For assignment/demo use, the app stores data in a JSON file. On local development, that file is `data/db.json`. On Vercel, serverless functions use temporary file storage, so demo data may reset when the deployment is restarted or moved between serverless instances.
 
+Login tokens are signed and valid for 24 hours, so the current signed-in user can still be recognized during a demo even if Vercel resets the temporary file storage.
+
 For production use, replace the JSON file storage with a hosted database such as MongoDB Atlas, Supabase, Neon, or Vercel Postgres.
 
 ## Default Role Flow
