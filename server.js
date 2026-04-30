@@ -15,6 +15,22 @@ const SESSION_HOURS = 24;
 const DEFAULT_ADMIN_EMAIL = "admin@taskmanager.com";
 const DEFAULT_ADMIN_PASSWORD = "admin123";
 const TOKEN_SECRET = process.env.SESSION_SECRET || "team-task-manager-demo-secret";
+const VERCEL_DEMO_USERS = [
+  {
+    id: "usr_demo_member_riya",
+    name: "Riya Member",
+    email: "riya@taskmanager.com",
+    password: "member123",
+    role: "member"
+  },
+  {
+    id: "usr_demo_member_aman",
+    name: "Aman Member",
+    email: "aman@taskmanager.com",
+    password: "member123",
+    role: "member"
+  }
+];
 
 function ensureDb() {
   const dbDir = path.dirname(DB_PATH);
@@ -29,25 +45,74 @@ function ensureDb() {
   }
 }
 
-function seedDefaultAdmin(db) {
-  const hasDefaultAdmin = db.users.some(user => user.email === DEFAULT_ADMIN_EMAIL);
-  if (hasDefaultAdmin) return false;
-
+function addSeedUser(db, user) {
+  if (db.users.some(item => item.email === user.email)) return false;
   db.users.push({
-    id: "usr_default_admin",
-    name: "Default Admin",
-    email: DEFAULT_ADMIN_EMAIL,
-    passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
-    role: "admin",
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    passwordHash: hashPassword(user.password),
+    role: user.role,
     createdAt: new Date().toISOString()
   });
   return true;
 }
 
+function seedDefaultData(db) {
+  let changed = false;
+  const hasDefaultAdmin = db.users.some(user => user.email === DEFAULT_ADMIN_EMAIL);
+  if (!hasDefaultAdmin) {
+    changed = addSeedUser(db, {
+      id: "usr_default_admin",
+      name: "Default Admin",
+      email: DEFAULT_ADMIN_EMAIL,
+      password: DEFAULT_ADMIN_PASSWORD,
+      role: "admin"
+    }) || changed;
+  }
+
+  if (process.env.VERCEL) {
+    VERCEL_DEMO_USERS.forEach(user => {
+      changed = addSeedUser(db, user) || changed;
+    });
+
+    const hasDemoProject = db.projects.some(project => project.id === "prj_vercel_demo");
+    if (!hasDemoProject) {
+      db.projects.push({
+        id: "prj_vercel_demo",
+        name: "Vercel Demo Project",
+        description: "Sample project for checking teams, members, tasks, and dashboard on Vercel.",
+        ownerId: "usr_default_admin",
+        memberIds: ["usr_default_admin", "usr_demo_member_riya", "usr_demo_member_aman"],
+        createdAt: new Date().toISOString()
+      });
+      changed = true;
+    }
+
+    const hasDemoTask = db.tasks.some(task => task.id === "tsk_vercel_demo");
+    if (!hasDemoTask) {
+      db.tasks.push({
+        id: "tsk_vercel_demo",
+        title: "Review team dashboard",
+        description: "Confirm that project members and task assignment are visible on Vercel.",
+        projectId: "prj_vercel_demo",
+        assigneeId: "usr_demo_member_riya",
+        status: "in-progress",
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function readDb() {
   ensureDb();
   const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-  if (seedDefaultAdmin(db)) writeDb(db);
+  if (seedDefaultData(db)) writeDb(db);
   return db;
 }
 

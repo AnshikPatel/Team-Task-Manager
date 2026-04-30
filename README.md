@@ -83,6 +83,16 @@ Email: admin@taskmanager.com
 Password: admin123
 ```
 
+On Vercel, the app also creates demo members so the project/team screens always have visible team data:
+
+```text
+Email: riya@taskmanager.com
+Password: member123
+
+Email: aman@taskmanager.com
+Password: member123
+```
+
 1. Sign up with the first account.
 2. That account automatically becomes `Admin`.
 3. Sign up with another account.

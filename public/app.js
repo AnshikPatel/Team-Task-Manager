@@ -167,7 +167,8 @@ function renderAuth(mode = "login") {
             <button class="btn full" type="submit">${mode === "signup" ? "Create account" : "Login"}</button>
             ${mode === "login" ? `
               <p class="login-help">
-                Default Admin: <strong>admin@taskmanager.com</strong> / <strong>admin123</strong>
+                Admin: <strong>admin@taskmanager.com</strong> / <strong>admin123</strong><br />
+                Member: <strong>riya@taskmanager.com</strong> / <strong>member123</strong>
               </p>
             ` : ""}
           </form>
