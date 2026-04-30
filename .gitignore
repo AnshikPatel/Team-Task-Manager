@@ -1,0 +1,4 @@
+.codex/
+node_modules/
+data/db.json
+.server.pid
