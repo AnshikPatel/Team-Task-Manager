@@ -6,13 +6,16 @@ const crypto = require("crypto");
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
+const DB_PATH = process.env.VERCEL
+  ? path.join("/tmp", "team-task-manager-db.json")
+  : path.join(DATA_DIR, "db.json");
 
 const TASK_STATUSES = ["todo", "in-progress", "done"];
 const SESSION_HOURS = 24;
 
 function ensureDb() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dbDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
   if (!fs.existsSync(DB_PATH)) {
     writeDb({
       users: [],
@@ -411,7 +414,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname.startsWith("/api/")) {
@@ -421,9 +424,14 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     sendError(res, 500, error.message || "Server error.");
   }
-});
+}
 
-ensureDb();
-server.listen(PORT, () => {
-  console.log(`Team Task Manager running at http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  const server = http.createServer(handleRequest);
+  ensureDb();
+  server.listen(PORT, () => {
+    console.log(`Team Task Manager running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = handleRequest;

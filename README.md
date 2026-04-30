@@ -64,6 +64,14 @@ http://localhost:3000
 
 The app creates `data/db.json` automatically when it starts. This live database file is ignored by Git so private user data is not pushed.
 
+## Deploying To Vercel
+
+This project includes a Vercel serverless API entry point in `api/[...path].js`, so it can be deployed directly to Vercel.
+
+For assignment/demo use, the app stores data in a JSON file. On local development, that file is `data/db.json`. On Vercel, serverless functions use temporary file storage, so demo data may reset when the deployment is restarted or moved between serverless instances.
+
+For production use, replace the JSON file storage with a hosted database such as MongoDB Atlas, Supabase, Neon, or Vercel Postgres.
+
 ## Default Role Flow
 
 1. Sign up with the first account.
