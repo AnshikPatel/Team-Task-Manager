@@ -12,6 +12,8 @@ const DB_PATH = process.env.VERCEL
 
 const TASK_STATUSES = ["todo", "in-progress", "done"];
 const SESSION_HOURS = 24;
+const DEFAULT_ADMIN_EMAIL = "admin@taskmanager.com";
+const DEFAULT_ADMIN_PASSWORD = "admin123";
 
 function ensureDb() {
   const dbDir = path.dirname(DB_PATH);
@@ -26,9 +28,26 @@ function ensureDb() {
   }
 }
 
+function seedDefaultAdmin(db) {
+  const hasDefaultAdmin = db.users.some(user => user.email === DEFAULT_ADMIN_EMAIL);
+  if (hasDefaultAdmin) return false;
+
+  db.users.push({
+    id: "usr_default_admin",
+    name: "Default Admin",
+    email: DEFAULT_ADMIN_EMAIL,
+    passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
+    role: "admin",
+    createdAt: new Date().toISOString()
+  });
+  return true;
+}
+
 function readDb() {
   ensureDb();
-  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  if (seedDefaultAdmin(db)) writeDb(db);
+  return db;
 }
 
 function writeDb(db) {

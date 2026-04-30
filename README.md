@@ -74,6 +74,13 @@ For production use, replace the JSON file storage with a hosted database such as
 
 ## Default Role Flow
 
+The app also creates one default admin account automatically:
+
+```text
+Email: admin@taskmanager.com
+Password: admin123
+```
+
 1. Sign up with the first account.
 2. That account automatically becomes `Admin`.
 3. Sign up with another account.
