@@ -13,6 +13,73 @@ const state = {
 };
 
 const app = document.querySelector("#app");
+const LOCAL_DATA_KEY = "ttm_demo_data";
+
+function readLocalData() {
+  try {
+    const data = JSON.parse(localStorage.getItem(LOCAL_DATA_KEY) || "{}");
+    return {
+      users: Array.isArray(data.users) ? data.users : [],
+      projects: Array.isArray(data.projects) ? data.projects : [],
+      tasks: Array.isArray(data.tasks) ? data.tasks : []
+    };
+  } catch {
+    return { users: [], projects: [], tasks: [] };
+  }
+}
+
+function writeLocalData(data) {
+  localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify({
+    users: data.users || [],
+    projects: data.projects || [],
+    tasks: data.tasks || []
+  }));
+}
+
+function upsertById(items, item) {
+  const next = items.filter(existing => existing.id !== item.id);
+  next.push(item);
+  return next;
+}
+
+function mergeById(primary, secondary) {
+  const map = new Map();
+  [...primary, ...secondary].forEach(item => {
+    if (item?.id) map.set(item.id, { ...(map.get(item.id) || {}), ...item });
+  });
+  return [...map.values()];
+}
+
+function rememberUser(user) {
+  const data = readLocalData();
+  data.users = upsertById(data.users, user);
+  writeLocalData(data);
+}
+
+function rememberProject(project) {
+  const data = readLocalData();
+  data.projects = upsertById(data.projects, project);
+  writeLocalData(data);
+}
+
+function rememberTask(task) {
+  const data = readLocalData();
+  data.tasks = upsertById(data.tasks, task);
+  writeLocalData(data);
+}
+
+function forgetProject(projectId) {
+  const data = readLocalData();
+  data.projects = data.projects.filter(project => project.id !== projectId);
+  data.tasks = data.tasks.filter(task => task.projectId !== projectId);
+  writeLocalData(data);
+}
+
+function forgetTask(taskId) {
+  const data = readLocalData();
+  data.tasks = data.tasks.filter(task => task.id !== taskId);
+  writeLocalData(data);
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -85,21 +152,78 @@ function projectProgress(project) {
   return Math.round((tasks.filter(task => task.status === "done").length / tasks.length) * 100);
 }
 
+function hydrateProject(project) {
+  const owner = project.owner || state.users.find(user => user.id === project.ownerId) || state.user;
+  const memberIds = [...new Set([...(project.memberIds || []), owner?.id].filter(Boolean))];
+  const members = project.members?.length
+    ? project.members
+    : state.users.filter(user => memberIds.includes(user.id));
+  return {
+    ...project,
+    owner,
+    memberIds,
+    members,
+    taskCount: state.tasks.filter(task => task.projectId === project.id).length
+  };
+}
+
+function hydrateTask(task) {
+  const project = state.projects.find(item => item.id === task.projectId);
+  const assignee = state.users.find(item => item.id === task.assigneeId);
+  return {
+    ...task,
+    projectName: task.projectName || project?.name || "Unknown project",
+    assigneeName: task.assigneeName || assignee?.name || "Unassigned"
+  };
+}
+
+function calculateDashboard() {
+  const visibleProjectIds = new Set(state.projects.map(project => project.id));
+  const tasks = state.tasks.filter(task => visibleProjectIds.has(task.projectId));
+  const myTasks = tasks.filter(task => task.assigneeId === state.user.id);
+  const overdueTasks = tasks.filter(isOverdue).map(hydrateTask);
+  const byStatus = ["todo", "in-progress", "done"].reduce((summary, status) => {
+    summary[status] = tasks.filter(task => task.status === status).length;
+    return summary;
+  }, {});
+  return {
+    projects: state.projects.length,
+    tasks: tasks.length,
+    myTasks: myTasks.length,
+    overdue: overdueTasks.length,
+    byStatus,
+    overdueTasks: overdueTasks.slice(0, 8),
+    recentTasks: tasks
+      .slice()
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 8)
+      .map(hydrateTask)
+  };
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 async function loadAppData() {
-  const [users, projects, tasks, dashboard] = await Promise.all([
+  const localData = readLocalData();
+  if (state.user) rememberUser(state.user);
+
+  const [users, projects, tasks] = await Promise.all([
     api("/api/users"),
     api("/api/projects"),
-    api("/api/tasks"),
-    api("/api/dashboard")
+    api("/api/tasks")
   ]);
-  state.users = users.users;
-  state.projects = projects.projects;
-  state.tasks = tasks.tasks;
-  state.dashboard = dashboard;
+
+  state.users = mergeById(users.users, localData.users);
+  if (state.user && !state.users.some(user => user.id === state.user.id)) {
+    state.users.push(state.user);
+  }
+  state.tasks = mergeById(tasks.tasks, localData.tasks).map(hydrateTask);
+  state.projects = mergeById(projects.projects, localData.projects).map(hydrateProject);
+  state.tasks = state.tasks.map(hydrateTask);
+  state.projects = state.projects.map(hydrateProject);
+  state.dashboard = calculateDashboard();
 }
 
 async function boot() {
@@ -198,6 +322,7 @@ function renderAuth(mode = "login") {
         body: JSON.stringify(payload)
       });
       saveSession(data.token, data.user);
+      rememberUser(data.user);
       setNotice("");
       await loadAppData();
       renderApp();
@@ -439,7 +564,7 @@ function bindProjects() {
       const memberIds = formData.getAll("memberIds");
       if (!memberIds.includes(state.user.id)) memberIds.push(state.user.id);
       try {
-        await api("/api/projects", {
+        const response = await api("/api/projects", {
           method: "POST",
           body: JSON.stringify({
             name: formData.get("name"),
@@ -447,6 +572,7 @@ function bindProjects() {
             memberIds
           })
         });
+        rememberProject(hydrateProject(response.project));
         setNotice("Project created.");
         await loadAppData();
         renderApp();
@@ -461,6 +587,7 @@ function bindProjects() {
       if (!confirm("Delete this project and its tasks?")) return;
       try {
         await api(`/api/projects/${button.dataset.deleteProject}`, { method: "DELETE" });
+        forgetProject(button.dataset.deleteProject);
         setNotice("Project deleted.");
         await loadAppData();
         renderApp();
@@ -645,10 +772,11 @@ function bindTasks() {
       event.preventDefault();
       const formData = new FormData(form);
       try {
-        await api("/api/tasks", {
+        const response = await api("/api/tasks", {
           method: "POST",
           body: JSON.stringify(Object.fromEntries(formData.entries()))
         });
+        rememberTask(hydrateTask(response.task));
         setNotice("Task created.");
         await loadAppData();
         renderApp();
@@ -686,10 +814,11 @@ function bindTasks() {
         ? { ...task, status: select.value }
         : { status: select.value };
       try {
-        await api(`/api/tasks/${task.id}`, {
+        const response = await api(`/api/tasks/${task.id}`, {
           method: "PUT",
           body: JSON.stringify(payload)
         });
+        rememberTask(hydrateTask(response.task));
         setNotice("Task status updated.");
         await loadAppData();
         renderApp();
@@ -705,6 +834,7 @@ function bindTasks() {
       if (!confirm("Delete this task?")) return;
       try {
         await api(`/api/tasks/${button.dataset.deleteTask}`, { method: "DELETE" });
+        forgetTask(button.dataset.deleteTask);
         setNotice("Task deleted.");
         await loadAppData();
         renderApp();
